@@ -8,7 +8,7 @@ import json
 import logging
 import requests
 from datetime import date
-from ..config import KEYWORDS, MAX_RESULTS_PER_PLATFORM, REQUEST_DELAY, USER_AGENT
+from goosewatch.config import KEYWORDS, MAX_RESULTS_PER_PLATFORM, REQUEST_DELAY, USER_AGENT
 
 logger = logging.getLogger(__name__)
 

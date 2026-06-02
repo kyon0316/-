@@ -6,7 +6,7 @@ writer.py
 """
 import logging
 import requests
-from ..config import FEISHU_APP_ID, FEISHU_APP_SECRET, BITABLE_APP_TOKEN, BITABLE_TABLE_ID
+from goosewatch.config import FEISHU_APP_ID, FEISHU_APP_SECRET, BITABLE_APP_TOKEN, BITABLE_TABLE_ID
 
 logger = logging.getLogger(__name__)
 

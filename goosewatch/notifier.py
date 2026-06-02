@@ -6,7 +6,7 @@ notifier.py
 import logging
 import requests
 from datetime import date
-from ..config import FEISHU_WEBHOOK_URL
+from goosewatch.config import FEISHU_WEBHOOK_URL
 
 logger = logging.getLogger(__name__)
 

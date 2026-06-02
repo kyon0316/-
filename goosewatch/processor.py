@@ -7,7 +7,7 @@ processor.py
 """
 import logging
 from datetime import date, timedelta
-from ..config import PRICE_CHANGE_THRESHOLD
+from goosewatch.config import PRICE_CHANGE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 

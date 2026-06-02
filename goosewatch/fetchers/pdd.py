@@ -8,7 +8,7 @@ fetchers/pdd.py
 import time
 import logging
 from datetime import date
-from ..config import KEYWORDS, MAX_RESULTS_PER_PLATFORM, REQUEST_DELAY
+from goosewatch.config import KEYWORDS, MAX_RESULTS_PER_PLATFORM, REQUEST_DELAY
 
 logger = logging.getLogger(__name__)
 
