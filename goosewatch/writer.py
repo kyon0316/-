@@ -119,7 +119,7 @@ def fetch_yesterday_records(collect_date: str) -> list[dict]:
             logger.warning(f"[Writer] 查询历史记录失败: {data}")
             break
 
-        records = data.get("data", {}).get("items", [])
+        records = data.get("data", {}).get("items") or []
         for rec in records:
             fields = rec.get("fields", {})
             # 转回标准格式

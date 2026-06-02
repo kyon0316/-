@@ -43,6 +43,24 @@ def fetch_jd(keywords: list[str] = None) -> list[dict]:
 
 def _search_jd(session: requests.Session, keyword: str) -> list[dict]:
     """调用京东搜索接口，解析商品列表"""
+    today = str(date.today())
+    items = []
+
+    # 优先使用京东的 JSON 搜索接口 (pc_search)
+    try:
+        items = _search_jd_json(session, keyword, today)
+        if items:
+            logger.info(f"[JD] '{keyword}' JSON接口获取 {len(items)} 条")
+            return items
+    except Exception as e:
+        logger.debug(f"[JD] JSON接口失败: {e}")
+
+    # fallback: HTML 解析
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        raise RuntimeError("请安装 beautifulsoup4: pip install beautifulsoup4")
+
     url = "https://search.jd.com/Search"
     params = {
         "keyword": keyword,
@@ -54,25 +72,42 @@ def _search_jd(session: requests.Session, keyword: str) -> list[dict]:
     resp = session.get(url, params=params, timeout=15)
     resp.raise_for_status()
 
-    # 京东搜索结果在 HTML 里，用 BeautifulSoup 解析
-    try:
-        from bs4 import BeautifulSoup
-    except ImportError:
-        raise RuntimeError("请安装 beautifulsoup4: pip install beautifulsoup4")
-
     soup = BeautifulSoup(resp.text, "html.parser")
-    items = []
-    today = str(date.today())
 
-    product_list = soup.select("ul.gl-warp > li.gl-item")[:MAX_RESULTS_PER_PLATFORM]
+    # 尝试多种选择器
+    product_list = soup.select("ul.gl-warp > li.gl-item")
+    if not product_list:
+        product_list = soup.select(".gl-item")
+    if not product_list:
+        # 新版本用 JS 渲染，尝试从页面内嵌 JSON 提取
+        scripts = soup.find_all("script")
+        for script in scripts:
+            if script.string and "wareInfo" in script.string:
+                try:
+                    import re
+                    matches = re.findall(r'"skuId":"(\d+)".*?"name":"([^"]+)".*?"jdPrice":.*?"op":"([^"]+)"', script.string)
+                    for m in matches[:MAX_RESULTS_PER_PLATFORM]:
+                        items.append({
+                            "platform": "京东", "keyword": keyword, "title": m[1],
+                            "price": float(m[2]), "original_price": float(m[2]),
+                            "sales": 0, "shop_name": "", "rating": None,
+                            "url": f"https://item.jd.com/{m[0]}.html", "sku_id": m[0],
+                            "collect_date": today, "price_change_pct": None,
+                        })
+                    logger.info(f"[JD] '{keyword}' 内嵌JSON获取 {len(items)} 条")
+                    return items
+                except Exception:
+                    pass
+
+    product_list = product_list[:MAX_RESULTS_PER_PLATFORM]
     for li in product_list:
         try:
             sku_id = li.get("data-sku", "")
             title_el = li.select_one(".p-name em") or li.select_one(".p-name")
             title = title_el.get_text(strip=True) if title_el else ""
-            price_el = li.select_one(".p-price strong i")
+            price_el = li.select_one(".p-price strong i") or li.select_one(".p-price i")
             price = float(price_el.get_text(strip=True)) if price_el else 0.0
-            shop_el = li.select_one(".p-shop a")
+            shop_el = li.select_one(".p-shop a") or li.select_one(".p-shop span")
             shop_name = shop_el.get_text(strip=True) if shop_el else "京东自营"
             commit_el = li.select_one(".p-commit strong a")
             sales_text = commit_el.get_text(strip=True) if commit_el else "0"
@@ -96,7 +131,43 @@ def _search_jd(session: requests.Session, keyword: str) -> list[dict]:
         except Exception as e:
             logger.debug(f"[JD] 解析单条失败: {e}")
 
-    logger.info(f"[JD] '{keyword}' 获取 {len(items)} 条")
+    logger.info(f"[JD] '{keyword}' HTML解析获取 {len(items)} 条")
+    return items
+
+
+def _search_jd_json(session: requests.Session, keyword: str, today: str) -> list[dict]:
+    """使用京东 pc_search JSON 接口"""
+    items = []
+    url = "https://search.jd.com/s_new.php"
+    params = {
+        "keyword": keyword,
+        "enc": "utf-8",
+        "page": 1,
+        "s": 1,
+    }
+    resp = session.get(url, params=params, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    goods_list = data.get("wareInfo") or data.get("goods") or []
+    for g in goods_list[:MAX_RESULTS_PER_PLATFORM]:
+        try:
+            sku_id = str(g.get("wareId") or g.get("skuId", ""))
+            items.append({
+                "platform": "京东",
+                "keyword": keyword,
+                "title": g.get("warename") or g.get("title", ""),
+                "price": float(g.get("jdPrice") or g.get("price", 0)),
+                "original_price": float(g.get("jdPrice") or g.get("price", 0)),
+                "sales": int(g.get("inOrderCount30Days") or 0),
+                "shop_name": g.get("shopName", ""),
+                "rating": g.get("goodRate"),
+                "url": f"https://item.jd.com/{sku_id}.html" if sku_id else "",
+                "sku_id": sku_id,
+                "collect_date": today,
+                "price_change_pct": None,
+            })
+        except Exception as e:
+            logger.debug(f"[JD] JSON解析单条失败: {e}")
     return items
 
 
