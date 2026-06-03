@@ -2,14 +2,14 @@ name: Goosewatch Daily
 
 on:
   schedule:
-    # 每天 08:00 UTC+8（即 00:00 UTC）触发
-    - cron: "0 0 * * *"
+    # 每天 10:00 UTC+8（即 02:00 UTC）触发
+    - cron: "0 2 * * *"
   workflow_dispatch:   # 支持手动触发，调试用
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
@@ -21,9 +21,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          pip install -r goosewatch/requirements.txt
-          playwright install chromium --with-deps
+        run: pip install -r goosewatch/requirements.txt
 
       - name: Run goosewatch
         env:
@@ -32,6 +30,4 @@ jobs:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           BITABLE_APP_TOKEN:  ${{ secrets.BITABLE_APP_TOKEN }}
           BITABLE_TABLE_ID:   ${{ secrets.BITABLE_TABLE_ID }}
-          TAOBAO_COOKIE:      ${{ secrets.TAOBAO_COOKIE }}
-          DOUYIN_COOKIE:      ${{ secrets.DOUYIN_COOKIE }}
         run: python -m goosewatch.main
