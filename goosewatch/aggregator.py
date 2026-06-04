@@ -11,6 +11,7 @@ import requests
 from datetime import date
 from bs4 import BeautifulSoup
 from goosewatch.config import GOOSE_PRODUCTS, DATA_SOURCES, USER_AGENT, REQUEST_DELAY
+from goosewatch.source_discoverer import get_all_sources
 
 logger = logging.getLogger(__name__)
 
@@ -254,13 +255,17 @@ def aggregate_all() -> list[dict]:
 
     logger.info(f"[Aggregator] 开始聚合 {len(GOOSE_PRODUCTS)} 个鹅产品行情...")
 
+    # 加载所有数据源（内置 + 自发现）
+    all_sources = get_all_sources()
+    logger.info(f"[Aggregator] 数据源: {len(all_sources)} 个 (内置{len(DATA_SOURCES)}+自发现{len(all_sources)-len(DATA_SOURCES)})")
+
     for product in GOOSE_PRODUCTS:
         name = product["name"]
         category = product["category"]
 
         # 1. 依次尝试各在线数据源获取价格
         online_price = None
-        for ds in DATA_SOURCES:
+        for ds in all_sources:
             fetcher = FETCHERS.get(ds["name"])
             if not fetcher:
                 continue

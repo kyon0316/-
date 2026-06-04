@@ -1,7 +1,7 @@
 """
 main.py
-鹅产品监控主入口 —— 每日定时运行。
-流程：抓取 → 处理 → 写入飞书 → 通知
+鹅产品市场调研主入口 —— 每日定时运行。
+流程：互联网信息聚合 → 处理 → 写入飞书 → 通知
 """
 import logging
 import sys
@@ -17,35 +17,42 @@ logger = logging.getLogger("goosewatch.main")
 
 
 def run():
-    logger.info("===== 鹅产品监控启动 =====")
+    logger.info("===== 鹅产品市场调研启动 =====")
     today = str(date.today())
-    yesterday = str(date.today() - timedelta(days=1))
 
-    from goosewatch.fetchers import fetch_taobao, fetch_jd, fetch_pdd, fetch_douyin
+    from goosewatch.aggregator import aggregate_all
     from goosewatch.processor import process
     from goosewatch.writer import write_to_bitable, fetch_yesterday_records
     from goosewatch.notifier import send_daily_summary, send_error_alert
 
     try:
-        # ── 1. 抓取各平台 ──────────────────────────────────────
-        logger.info("--- 开始抓取 ---")
-        raw = []
+        # ── 0. 数据源自迭代（每周自动发现新源） ──────────────────
+        logger.info("--- 数据源自迭代检查 ---")
+        try:
+            from goosewatch.source_discoverer import discover_new_sources, get_discovery_stats
+            stats = get_discovery_stats()
+            logger.info(f"当前数据源: {stats['total_count']} 个 (内置{stats['builtin_count']}+自发现{stats['discovered_count']})")
 
-        logger.info("[Step 1/4] 抓取京东")
-        raw += fetch_jd()
+            # 每周运行一次发现（周一 = 0）
+            if date.today().weekday() == 0:
+                new_sources = discover_new_sources()
+                if new_sources:
+                    logger.info(f"发现 {len(new_sources)} 个新数据源")
+                else:
+                    logger.info("本次未发现新数据源")
+            else:
+                logger.info("非周一，跳过数据源发现（每周一自动运行）")
+        except Exception as e:
+            logger.warning(f"数据源发现跳过: {e}")
 
-        logger.info("[Step 2/4] 抓取淘宝")
-        raw += fetch_taobao()
+        # ── 1. 互联网信息聚合 ──────────────────────────────────
+        logger.info("--- 开始互联网信息聚合 ---")
+        raw = aggregate_all()
 
-        logger.info("[Step 3/4] 抓取拼多多")
-        raw += fetch_pdd()
+        logger.info(f"--- 聚合完成，共 {len(raw)} 条原始数据 ---")
 
-        logger.info("[Step 4/4] 抓取抖音")
-        raw += fetch_douyin()
-
-        logger.info(f"--- 抓取完成，共 {len(raw)} 条原始数据 ---")
-
-        # ── 2. 获取昨日数据用于价格对比 ───────────────────────
+        # ── 2. 获取昨日数据用于对比 ─────────────────────────────
+        yesterday = str(date.today() - timedelta(days=1))
         logger.info(f"--- 查询昨日({yesterday})历史数据 ---")
         yesterday_records = fetch_yesterday_records(yesterday)
 
@@ -57,14 +64,14 @@ def run():
         logger.info("--- 写入飞书多维表格 ---")
         total_written = write_to_bitable(cleaned)
 
-        # ── 5. 统计各平台数量 ──────────────────────────────────
-        platform_stats = dict(Counter(item["platform"] for item in cleaned))
+        # ── 5. 统计各品类数量 ──────────────────────────────────
+        category_stats = dict(Counter(item.get("产品类别", "未知") for item in cleaned))
 
         # ── 6. 发送飞书通知 ────────────────────────────────────
         logger.info("--- 发送飞书通知 ---")
-        send_daily_summary(total_written, alerts, platform_stats)
+        send_daily_summary(total_written, alerts, category_stats)
 
-        logger.info(f"===== 鹅产品监控完成，写入 {total_written} 条，异动 {len(alerts)} 条 =====")
+        logger.info(f"===== 鹅产品市场调研完成，写入 {total_written} 条，异动 {len(alerts)} 条 =====")
         return 0
 
     except Exception as e:
