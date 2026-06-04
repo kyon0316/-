@@ -1,0 +1,308 @@
+"""
+goosewatch / aggregator.py
+鹅产品市场行情聚合器。
+通过多个公开 B2B/农产品信息源聚合鹅各部位产品的价格和需求数据。
+不需要 Cookie、不需要登录、纯 HTTP 请求。
+"""
+import logging
+import re
+import time
+import requests
+from datetime import date
+from bs4 import BeautifulSoup
+from goosewatch.config import GOOSE_PRODUCTS, DATA_SOURCES, USER_AGENT, REQUEST_DELAY
+
+logger = logging.getLogger(__name__)
+
+# ── 内置行情参考数据（基于2025-2026产业报告 + 1688/爱采购调研） ──
+# 当在线搜索失败时使用，确保每天都有数据输出
+# 利润评级: S=极高(净利30%+), A=高(净利20-30%), B=中等(净利15-20%)
+BASELINE_PRICES = {
+    # ═══ 酱卤熟食（占深加工市场60%+，净利率15-25%） ═══
+    "整只卤鹅":     {"price_low": 80,   "price_high": 300,  "unit": "元/只",   "demand": "极高", "profit": "S", "note": "潮汕卤鹅线上年销破2亿;单只毛利50-90元;品牌溢价明显"},
+    "盐水鹅":       {"price_low": 60,   "price_high": 150,  "unit": "元/只",   "demand": "高",   "profit": "A", "note": "健康化趋势受益;低盐/清淡口味增速快;华东消费主力"},
+    "卤鹅翅":       {"price_low": 35,   "price_high": 60,   "unit": "元/斤",   "demand": "高",   "profit": "A", "note": "烧烤/卤味双场景;B端餐饮+C端零售;溢价原料3-5倍"},
+    "卤鹅掌":       {"price_low": 40,   "price_high": 80,   "unit": "元/斤",   "demand": "高",   "profit": "A", "note": "火锅/卤味/粤菜爆品;深加工溢价超原料4倍"},
+    "卤鹅脖":       {"price_low": 25,   "price_high": 45,   "unit": "元/斤",   "demand": "中",   "profit": "B", "note": "类比鸭脖模式;电商渗透中;竞争渐激烈"},
+
+    # ═══ 烧腊预制菜（年增15%+，净利率20-30%） ═══
+    "烧鹅预制菜":   {"price_low": 80,   "price_high": 160,  "unit": "元/只",   "demand": "极高", "profit": "S", "note": "预制菜万亿市场核心品类;深井烧鹅品牌化;B端餐饮降本首选"},
+    "红烧鹅块预制菜":{"price_low": 30,  "price_high": 60,   "unit": "元/份",   "demand": "高",   "profit": "A", "note": "家庭便捷消费;C端社区团购+电商;溢价原料40%+"},
+    "鹅汤预制菜":   {"price_low": 25,   "price_high": 50,   "unit": "元/份",   "demand": "中",   "profit": "B", "note": "胡椒猪肚鹅汤/老鹅汤;秋冬旺季;需品牌背书"},
+
+    # ═══ 鹅肝深加工（溢价5-10倍，净利率30%+） ═══
+    "鹅肝酱":       {"price_low": 80,   "price_high": 500,  "unit": "元/罐",   "demand": "极高", "profit": "S", "note": "高端礼品+餐饮;法式/中式两条线;出口单价超普通禽肉5倍"},
+    "即食法式鹅肝": {"price_low": 100,  "price_high": 300,  "unit": "元/份",   "demand": "高",   "profit": "S", "note": "真空即食;高端商超+电商;礼盒装溢价更高"},
+
+    # ═══ 速冻调理品（工业化初期，净利率12-18%） ═══
+    "鹅肉丸":       {"price_low": 20,   "price_high": 40,   "unit": "元/斤",   "demand": "中",   "profit": "B", "note": "火锅食材差异化品类;竞品牛肉丸成熟;需渠道推广"},
+    "调理鹅肉卷":   {"price_low": 25,   "price_high": 50,   "unit": "元/斤",   "demand": "中",   "profit": "B", "note": "火锅/烤肉场景;深加工毛利优于冷冻分割"},
+    "速冻鹅肉块":   {"price_low": 18,   "price_high": 35,   "unit": "元/斤",   "demand": "中",   "profit": "B", "note": "中央厨房半成品;B端快餐/食堂;量大价稳"},
+
+    # ═══ 休闲零食（新兴蓝海，净利率20-35%） ═══
+    "鹅肉干":       {"price_low": 80,   "price_high": 150,  "unit": "元/斤",   "demand": "高",   "profit": "A", "note": "类比牛肉干市场;年轻化/Z世代消费;小包装高客单"},
+    "鹅肉肠":       {"price_low": 30,   "price_high": 60,   "unit": "元/斤",   "demand": "中",   "profit": "B", "note": "哈肉联等品牌已入局;鹅肝肠差异化;即食便携"},
+    "香辣鹅脖零食": {"price_low": 50,   "price_high": 100,  "unit": "元/斤",   "demand": "高",   "profit": "A", "note": "鸭脖市场教育完成;鹅脖差异化切入;电商直播带货利器"},
+}
+
+
+def fetch_ymt_price(product_name: str) -> dict | None:
+    """
+    从一亩田 (ymt.com) 获取价格行情。
+    一亩田有公开的价格行情页面，反爬较松。
+    """
+    # 一亩田价格行情搜索
+    encoded = requests.utils.quote(product_name)
+    url = f"https://www.ymt.com/search?keyword={encoded}"
+    headers = {"User-Agent": USER_AGENT}
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=8)
+        if resp.status_code != 200:
+            return None
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # 尝试从页面提取价格
+        prices = []
+        for el in soup.select(".price, .money, .unit-price, [class*=price]"):
+            text = el.get_text(strip=True)
+            nums = re.findall(r'\d+\.?\d*', text)
+            if nums:
+                prices.append(float(nums[0]))
+
+        if prices:
+            return {
+                "source": "一亩田",
+                "price_low": min(prices),
+                "price_high": max(prices),
+                "avg": round(sum(prices) / len(prices), 2),
+            }
+    except Exception:
+        pass  # 一亩田不可用，fallback 到 baseline
+
+    return None
+
+
+def fetch_1688_price(product_name: str) -> dict | None:
+    """
+    从 1688 获取批发价格。
+    """
+    encoded = requests.utils.quote(product_name)
+    url = f"https://s.1688.com/selloffer/offer_search.htm?keywords={encoded}"
+    headers = {"User-Agent": USER_AGENT}
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=8)
+        if resp.status_code != 200:
+            return None
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        prices = []
+
+        for el in soup.select(".price, .sm-offer-priceNum, [class*=price]"):
+            text = el.get_text(strip=True)
+            nums = re.findall(r'\d+\.?\d*', text)
+            for n in nums:
+                val = float(n)
+                if 1 < val < 10000:  # 过滤不合理的价格
+                    prices.append(val)
+
+        if prices:
+            return {
+                "source": "1688",
+                "price_low": min(prices),
+                "price_high": max(prices),
+                "avg": round(sum(prices) / len(prices), 2),
+            }
+    except Exception:
+        pass  # 1688 不可用，fallback 到 baseline
+
+    return None
+
+
+def fetch_aicaigou_price(product_name: str) -> dict | None:
+    """
+    从百度爱采购 (b2b.baidu.com) 获取批发价格。
+    """
+    encoded = requests.utils.quote(product_name)
+    url = f"https://b2b.baidu.com/s?q={encoded}"
+    headers = {"User-Agent": USER_AGENT}
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=8)
+        if resp.status_code != 200:
+            return None
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        prices = []
+
+        for el in soup.select(".price, .money, [class*=price]"):
+            text = el.get_text(strip=True)
+            nums = re.findall(r'\d+\.?\d*', text)
+            for n in nums:
+                val = float(n)
+                if 1 < val < 10000:
+                    prices.append(val)
+
+        if prices:
+            return {
+                "source": "百度爱采购",
+                "price_low": min(prices),
+                "price_high": max(prices),
+                "avg": round(sum(prices) / len(prices), 2),
+            }
+    except Exception:
+        pass
+
+    return None
+
+
+def fetch_cnhnb_price(product_name: str) -> dict | None:
+    """
+    从惠农网 (cnhnb.com) 获取农产品价格行情。
+    """
+    encoded = requests.utils.quote(product_name)
+    url = f"https://www.cnhnb.com/hangqing/cd-0-0-0-0-1.html?keyword={encoded}"
+    headers = {"User-Agent": USER_AGENT}
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=8)
+        if resp.status_code != 200:
+            return None
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        prices = []
+
+        for el in soup.select(".price, .money, .unit, [class*=price]"):
+            text = el.get_text(strip=True)
+            nums = re.findall(r'\d+\.?\d*', text)
+            for n in nums:
+                val = float(n)
+                if 1 < val < 10000:
+                    prices.append(val)
+
+        if prices:
+            return {
+                "source": "惠农网",
+                "price_low": min(prices),
+                "price_high": max(prices),
+                "avg": round(sum(prices) / len(prices), 2),
+            }
+    except Exception:
+        pass
+
+    return None
+
+
+def fetch_21food_price(product_name: str) -> dict | None:
+    """
+    从食品商务网 (price.21food.cn) 获取食品价格行情。
+    该网站有专门的鹅产品价格页面，数据质量较高。
+    """
+    encoded = requests.utils.quote(product_name)
+    url = f"https://price.21food.cn/search?keyword={encoded}"
+    headers = {"User-Agent": USER_AGENT}
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=8)
+        if resp.status_code != 200:
+            return None
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        prices = []
+
+        for el in soup.select(".price, .money, .unit, [class*=price]"):
+            text = el.get_text(strip=True)
+            nums = re.findall(r'\d+\.?\d*', text)
+            for n in nums:
+                val = float(n)
+                if 1 < val < 10000:
+                    prices.append(val)
+
+        if prices:
+            return {
+                "source": "食品商务网",
+                "price_low": min(prices),
+                "price_high": max(prices),
+                "avg": round(sum(prices) / len(prices), 2),
+            }
+    except Exception:
+        pass
+
+    return None
+
+
+# ── 数据源 → fetch 函数映射 ──
+FETCHERS = {
+    "一亩田":     fetch_ymt_price,
+    "1688":      fetch_1688_price,
+    "百度爱采购":  fetch_aicaigou_price,
+    "惠农网":     fetch_cnhnb_price,
+    "食品商务网":  fetch_21food_price,
+}
+
+
+def aggregate_all() -> list[dict]:
+    """
+    聚合所有鹅产品的市场行情数据。
+    优先使用在线 B2B 数据，fallback 到内置 baseline。
+    返回标准化记录列表。
+    """
+    today = str(date.today())
+    all_records = []
+
+    logger.info(f"[Aggregator] 开始聚合 {len(GOOSE_PRODUCTS)} 个鹅产品行情...")
+
+    for product in GOOSE_PRODUCTS:
+        name = product["name"]
+        category = product["category"]
+
+        # 1. 依次尝试各在线数据源获取价格
+        online_price = None
+        for ds in DATA_SOURCES:
+            fetcher = FETCHERS.get(ds["name"])
+            if not fetcher:
+                continue
+            online_price = fetcher(name)
+            if online_price:
+                break
+            time.sleep(REQUEST_DELAY * 0.5)
+
+        # 2. Fallback 到 baseline
+        baseline = BASELINE_PRICES.get(name, {})
+
+        if online_price:
+            source = online_price["source"]
+            price_str = f"{online_price['price_low']}-{online_price['price_high']}元/斤"
+            note = f"在线获取: {online_price}"
+        else:
+            source = "行情基线"
+            if baseline.get("price_high", 0) > 0:
+                price_str = f"{baseline['price_low']}-{baseline['price_high']}{baseline['unit']}"
+            else:
+                price_str = baseline.get("unit", "暂无")
+            note = baseline.get("note", "")
+
+        record = {
+            "产品名称": name,
+            "产品类别": category,
+            "参考价格": price_str,
+            "市场需求": baseline.get("demand", "未知"),
+            "利润评级": baseline.get("profit", ""),
+            "数据来源": source,
+            "备注": note,
+            "采集日期": today,
+        }
+        all_records.append(record)
+
+        time.sleep(REQUEST_DELAY * 0.5)
+
+    logger.info(f"[Aggregator] 聚合完成，共 {len(all_records)} 条记录")
+    return all_records
+
+
+if __name__ == "__main__":
+    records = aggregate_all()
+    for r in records:
+        print(f"  [{r['产品类别']}] {r['产品名称']}: {r['参考价格']} | {r['市场需求']} | {r['备注'][:50]}")
