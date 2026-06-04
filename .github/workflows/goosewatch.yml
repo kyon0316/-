@@ -2,8 +2,8 @@ name: Goosewatch Daily
 
 on:
   schedule:
-    # 每天 10:00 UTC+8（即 02:00 UTC）触发
-    - cron: "0 2 * * *"
+    # 每个工作日 10:00 UTC+8（即 02:00 UTC，周一至周五）触发
+    - cron: "0 2 * * 1-5"
   workflow_dispatch:   # 支持手动触发，调试用
 
 jobs:
