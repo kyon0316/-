@@ -1,10 +1,11 @@
 """
 writer.py
 飞书多维表格写入模块。
-使用飞书 Bitable API v1，将商品数据写入指定表格。
-表格字段需提前在飞书多维表格中创建好（见 README 字段说明）。
+使用飞书 Bitable API v1，将鹅产品市场行情数据写入指定表格。
 """
 import logging
+import time
+from datetime import datetime, timezone
 import requests
 from goosewatch.config import FEISHU_APP_ID, FEISHU_APP_SECRET, BITABLE_APP_TOKEN, BITABLE_TABLE_ID
 
@@ -12,18 +13,14 @@ logger = logging.getLogger(__name__)
 
 # 飞书字段名映射（飞书多维表格中的字段名 -> 数据字典 key）
 FIELD_MAP = {
-    "平台": "platform",
-    "搜索词": "keyword",
-    "商品名称": "title",
-    "价格": "price",
-    "原价": "original_price",
-    "月销量": "sales",
-    "店铺名称": "shop_name",
-    "评分": "rating",
-    "商品链接": "url",
-    "商品ID": "sku_id",
-    "采集日期": "collect_date",
-    "价格变化(%)": "price_change_pct",
+    "产品名称":     "产品名称",
+    "产品类别":     "产品类别",
+    "参考价格":     "参考价格",
+    "市场需求":     "市场需求",
+    "利润评级":     "利润评级",
+    "数据来源":     "数据来源",
+    "备注":         "备注",
+    "采集日期":     "采集日期",
 }
 
 
@@ -68,12 +65,16 @@ def write_to_bitable(items: list[dict]) -> int:
             fields = {}
             for feishu_field, data_key in FIELD_MAP.items():
                 val = item.get(data_key)
-                if val is not None:
-                    # 链接字段特殊处理
-                    if data_key == "url" and val:
-                        fields[feishu_field] = {"link": val, "text": val}
-                    else:
-                        fields[feishu_field] = val
+                if val is None:
+                    continue
+                # 采集日期字段：飞书 Date 类型需要毫秒时间戳
+                if data_key == "采集日期" and isinstance(val, str):
+                    try:
+                        dt = datetime.strptime(val, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                        val = int(dt.timestamp() * 1000)
+                    except ValueError:
+                        pass
+                fields[feishu_field] = val
             records.append({"fields": fields})
 
         payload = {"records": records}
@@ -94,7 +95,7 @@ def write_to_bitable(items: list[dict]) -> int:
 
 def fetch_yesterday_records(collect_date: str) -> list[dict]:
     """
-    从飞书多维表格中获取指定日期的历史记录（用于价格对比）。
+    从飞书多维表格中获取指定日期的历史记录（用于对比）。
     collect_date: 'YYYY-MM-DD'
     """
     token = get_access_token()
@@ -122,7 +123,6 @@ def fetch_yesterday_records(collect_date: str) -> list[dict]:
         records = data.get("data", {}).get("items") or []
         for rec in records:
             fields = rec.get("fields", {})
-            # 转回标准格式
             item = {}
             for feishu_field, data_key in FIELD_MAP.items():
                 item[data_key] = fields.get(feishu_field)
