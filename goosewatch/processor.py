@@ -24,11 +24,20 @@ def process(raw_items: list[dict], yesterday_items: list[dict] = None) -> tuple[
     """
     yesterday_items = yesterday_items or []
 
+    # DEBUG: 打印第一条数据的完整信息
+    if raw_items:
+        first = raw_items[0]
+        logger.info(f"[Processor DEBUG] raw_items[0] type={type(first).__name__}, keys={list(first.keys())}")
+        logger.info(f"[Processor DEBUG] raw_items[0]['产品名称']={repr(first.get('产品名称'))}")
+        logger.info(f"[Processor DEBUG] raw_items[0] full={first}")
+
     # 1. 清洗：过滤空产品名称
     cleaned = []
+    skipped_names = []
     for item in raw_items:
         name = (item.get("产品名称") or "").strip()
         if not name:
+            skipped_names.append(repr(item.get("产品名称")))
             continue
         item["产品名称"] = name
         cleaned.append(item)
@@ -42,6 +51,8 @@ def process(raw_items: list[dict], yesterday_items: list[dict] = None) -> tuple[
             seen.add(key)
             deduped.append(item)
 
+    if skipped_names:
+        logger.warning(f"[Processor DEBUG] 被跳过的产品名称值: {skipped_names[:5]}... (共{len(skipped_names)}条)")
     logger.info(f"[Processor] 原始 {len(raw_items)} 条 → 清洗后 {len(cleaned)} → 去重后 {len(deduped)}")
 
     # 3. 异动检测（简化版：对比是否有新数据源或价格变化）
