@@ -11,7 +11,11 @@ import requests
 from datetime import date
 from bs4 import BeautifulSoup
 from goosewatch.config import GOOSE_PRODUCTS, DATA_SOURCES, USER_AGENT, REQUEST_DELAY
-from goosewatch.source_discoverer import get_all_sources
+
+try:
+    from goosewatch.source_discoverer import get_all_sources as _get_all_sources
+except Exception:
+    _get_all_sources = None
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +309,14 @@ def aggregate_all() -> list[dict]:
     logger.info(f"[Aggregator] 开始聚合 {len(GOOSE_PRODUCTS)} 个鹅产品行情...")
 
     # 加载所有数据源（内置 + 自发现）
-    all_sources = get_all_sources()
+    try:
+        if _get_all_sources is not None:
+            all_sources = _get_all_sources()
+        else:
+            all_sources = DATA_SOURCES
+    except Exception:
+        logger.warning("[Aggregator] 加载自发现数据源失败，仅用内置源")
+        all_sources = DATA_SOURCES
     logger.info(f"[Aggregator] 数据源: {len(all_sources)} 个 (内置{len(DATA_SOURCES)}+自发现{len(all_sources)-len(DATA_SOURCES)})")
 
     for product in GOOSE_PRODUCTS:

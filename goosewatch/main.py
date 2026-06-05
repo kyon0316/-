@@ -47,7 +47,13 @@ def run():
 
         # ── 1. 互联网信息聚合 ──────────────────────────────────
         logger.info("--- 开始互联网信息聚合 ---")
-        raw = aggregate_all()
+        try:
+            raw = aggregate_all()
+        except Exception as e:
+            logger.exception("聚合失败")
+            from goosewatch.notifier import send_error_alert
+            send_error_alert(f"数据聚合异常: {e}")
+            return 1
 
         logger.info(f"--- 聚合完成，共 {len(raw)} 条原始数据 ---")
 
