@@ -38,7 +38,7 @@ def get_access_token() -> str:
     resp = requests.post(url, json={
         "app_id": FEISHU_APP_ID,
         "app_secret": FEISHU_APP_SECRET,
-    }, timeout=10)
+    }, timeout=30)
     resp.raise_for_status()
     data = resp.json()
     if data.get("code") != 0:
@@ -86,7 +86,7 @@ def write_to_bitable(items: list[dict]) -> int:
             records.append({"fields": fields})
 
         payload = {"records": records}
-        resp = requests.post(url, headers=headers, json=payload, timeout=30)
+        resp = requests.post(url, headers=headers, json=payload, timeout=60)
         resp.raise_for_status()
         result = resp.json()
 
@@ -124,7 +124,7 @@ def fetch_yesterday_records(collect_date: str) -> list[dict]:
     while True:
         if page_token:
             params["page_token"] = page_token
-        resp = requests.get(url, headers=headers, params=params, timeout=15)
+        resp = requests.get(url, headers=headers, params=params, timeout=60)
         resp.raise_for_status()
         data = resp.json()
         if data.get("code") != 0:

@@ -60,7 +60,11 @@ def run():
         # ── 2. 获取昨日数据用于对比 ─────────────────────────────
         yesterday = str(date.today() - timedelta(days=1))
         logger.info(f"--- 查询昨日({yesterday})历史数据 ---")
-        yesterday_records = fetch_yesterday_records(yesterday)
+        try:
+            yesterday_records = fetch_yesterday_records(yesterday)
+        except Exception as e:
+            logger.warning(f"查询昨日数据失败（跳过对比）: {e}")
+            yesterday_records = []
 
         # ── 3. 数据处理 ────────────────────────────────────────
         logger.info("--- 数据处理中 ---")
