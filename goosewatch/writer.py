@@ -65,6 +65,10 @@ def write_to_bitable(items: list[dict]) -> int:
         logger.info("[Writer] 无数据需要写入")
         return 0
 
+    logger.info(f"[Writer] 收到 {len(items)} 条数据，准备写入...")
+    logger.info(f"[Writer] 第一条数据 keys: {list(items[0].keys())}")
+    logger.info(f"[Writer] 第一条数据 sample: { {k: str(v)[:50] for k, v in items[0].items()} }")
+
     token = get_access_token()
     headers = {
         "Authorization": f"Bearer {token}",

@@ -71,7 +71,7 @@ def run():
         cleaned, alerts = process(raw, yesterday_records)
 
         # ── 4. 写入飞书多维表格 ────────────────────────────────
-        logger.info(f"--- 写入飞书多维表格 ({len(cleaned)} 条待写入) ---")
+        logger.info(f"--- 写入飞书多维表格 ({len(cleaned)} 条待写入, type={type(cleaned).__name__}) ---")
         try:
             total_written = write_to_bitable(cleaned)
         except Exception as e:
