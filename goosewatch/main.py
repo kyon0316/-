@@ -72,7 +72,11 @@ def run():
 
         # ── 4. 写入飞书多维表格 ────────────────────────────────
         logger.info(f"--- 写入飞书多维表格 ({len(cleaned)} 条待写入) ---")
-        total_written = write_to_bitable(cleaned)
+        try:
+            total_written = write_to_bitable(cleaned)
+        except Exception as e:
+            logger.exception(f"写入飞书失败: {e}")
+            total_written = 0
 
         # ── 5. 统计各品类数量 ──────────────────────────────────
         category_stats = dict(Counter(item.get("产品类别", "未知") for item in cleaned))

@@ -33,17 +33,26 @@ FIELD_MAP = {
 
 
 def get_access_token() -> str:
-    """获取飞书 tenant_access_token"""
+    """获取飞书 tenant_access_token（含重试）"""
     url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
-    resp = requests.post(url, json={
-        "app_id": FEISHU_APP_ID,
-        "app_secret": FEISHU_APP_SECRET,
-    }, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    if data.get("code") != 0:
-        raise RuntimeError(f"飞书 Token 获取失败: {data}")
-    return data["tenant_access_token"]
+    last_error = None
+    for attempt in range(3):
+        try:
+            resp = requests.post(url, json={
+                "app_id": FEISHU_APP_ID,
+                "app_secret": FEISHU_APP_SECRET,
+            }, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") != 0:
+                raise RuntimeError(f"飞书 Token 获取失败: {data}")
+            return data["tenant_access_token"]
+        except Exception as e:
+            last_error = e
+            logger.warning(f"[Writer] 获取Token失败(尝试{attempt+1}/3): {e}")
+            if attempt < 2:
+                time.sleep(2)
+    raise RuntimeError(f"飞书 Token 获取失败（重试3次后）: {last_error}")
 
 
 def write_to_bitable(items: list[dict]) -> int:
@@ -86,19 +95,37 @@ def write_to_bitable(items: list[dict]) -> int:
             records.append({"fields": fields})
 
         payload = {"records": records}
-        resp = requests.post(url, headers=headers, json=payload, timeout=60)
-        resp.raise_for_status()
-        result = resp.json()
+        batch_written = 0
+        last_error = None
+        for attempt in range(3):
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=60)
+                resp.raise_for_status()
+                result = resp.json()
 
-        if result.get("code") == 0:
-            written = len(result.get("data", {}).get("records", []))
-            total_written += written
-            logger.info(f"[Writer] 批次 {i//batch_size + 1}: 写入 {written} 条")
-        else:
-            logger.error(f"[Writer] 飞书API错误 code={result.get('code')} msg={result.get('msg')}")
-            logger.error(f"[Writer] 完整响应: {result}")
-            if records:
-                logger.info(f"[Writer] 示例record keys: {list(records[0]['fields'].keys())}")
+                if result.get("code") == 0:
+                    batch_written = len(result.get("data", {}).get("records", []))
+                    total_written += batch_written
+                    logger.info(f"[Writer] 批次 {i//batch_size + 1}: 写入 {batch_written} 条")
+                    break
+                else:
+                    logger.error(f"[Writer] 飞书API错误 code={result.get('code')} msg={result.get('msg')}")
+                    logger.error(f"[Writer] 完整响应: {result}")
+                    if records:
+                        logger.info(f"[Writer] 示例record keys: {list(records[0]['fields'].keys())}")
+                    break  # API 返回了明确错误，不重试
+            except requests.exceptions.Timeout as e:
+                last_error = e
+                logger.warning(f"[Writer] 写入超时(尝试{attempt+1}/3): {e}")
+                if attempt < 2:
+                    time.sleep(3)
+            except Exception as e:
+                last_error = e
+                logger.warning(f"[Writer] 写入异常(尝试{attempt+1}/3): {e}")
+                if attempt < 2:
+                    time.sleep(3)
+        if batch_written == 0 and last_error:
+            logger.error(f"[Writer] 批次 {i//batch_size + 1} 写入失败（重试3次后）: {last_error}")
 
     logger.info(f"[Writer] 共写入 {total_written} 条")
     return total_written
