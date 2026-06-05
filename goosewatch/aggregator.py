@@ -340,14 +340,16 @@ def aggregate_all() -> list[dict]:
         if online_price:
             source = online_price["source"]
             price_str = f"{online_price['price_low']}-{online_price['price_high']}元/斤"
-            note = f"在线获取: {online_price}"
+            note = f"在线获取: {online_price['source']}实时报价 {online_price['price_low']}-{online_price['price_high']}元"
         else:
-            source = "行情基线"
+            source = "行情基线(B2B产业报告)"
             if baseline.get("price_high", 0) > 0:
                 price_str = f"{baseline['price_low']}-{baseline['price_high']}{baseline['unit']}"
             else:
                 price_str = baseline.get("unit", "暂无")
-            note = baseline.get("note", "")
+            # fallback 时用 highlight 的前60字作为备注
+            hl = baseline.get("highlight", "")
+            note = hl[:60] if hl else "基于2025-2026产业报告综合估算"
 
         record = {
             "产品名称": name,
