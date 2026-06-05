@@ -1,7 +1,7 @@
 """
 notifier.py
 飞书群 Webhook 通知模块。
-每天抓取完成后，推送摘要 + 价格异动告警到飞书群。
+每天聚合完成后，推送摘要 + 数据异动告警到飞书群。
 """
 import logging
 import requests
@@ -11,14 +11,14 @@ from goosewatch.config import FEISHU_WEBHOOK_URL
 logger = logging.getLogger(__name__)
 
 
-def send_daily_summary(total: int, alerts: list[dict], platform_stats: dict):
+def send_daily_summary(total: int, alerts: list[dict], category_stats: dict):
     """
-    发送每日监控摘要到飞书群。
+    发送每日鹅产品市场调研摘要到飞书群。
 
     Args:
         total: 今日总写入条数
-        alerts: 价格异动列表
-        platform_stats: 各平台抓取数量，如 {"京东": 40, "淘宝": 38, ...}
+        alerts: 数据异动列表
+        category_stats: 各品类数量，如 {"内脏": 10, "部位肉": 8, ...}
     """
     if not FEISHU_WEBHOOK_URL:
         logger.warning("[Notifier] 未配置 FEISHU_WEBHOOK_URL，跳过通知")
@@ -26,34 +26,32 @@ def send_daily_summary(total: int, alerts: list[dict], platform_stats: dict):
 
     today = str(date.today())
 
-    # 平台统计行
+    # 品类统计行
     stat_lines = "\n".join(
-        f"  · {platform}: {count} 条"
-        for platform, count in sorted(platform_stats.items())
+        f"  · {cat}: {count} 条"
+        for cat, count in sorted(category_stats.items())
     )
 
-    # 价格异动摘要（最多展示5条）
+    # 数据异动摘要（最多展示5条）
     if alerts:
         alert_lines = []
         for a in alerts[:5]:
-            direction = "涨" if a["change_pct"] > 0 else "降"
             alert_lines.append(
-                f"  {direction} {abs(a['change_pct']):.1f}%｜{a['platform']}｜"
-                f"{a['title'][:20]}｜¥{a['yesterday_price']} → ¥{a['price']}"
+                f"  ⚠️ {a.get('产品名称', '?')}｜{a.get('昨日价格', '?')} → {a.get('今日价格', '?')}"
             )
         alert_text = "\n".join(alert_lines)
         if len(alerts) > 5:
             alert_text += f"\n  ...还有 {len(alerts)-5} 条"
-        alert_section = f"\n**价格异动 ({len(alerts)} 条)**\n{alert_text}"
+        alert_section = f"\n**数据异动 ({len(alerts)} 条)**\n{alert_text}"
     else:
-        alert_section = "\n价格平稳，无异动"
+        alert_section = "\n数据稳定，无异动"
 
     content = (
-        f"**鹅产品监控日报 · {today}**\n\n"
-        f"今日共采集 **{total}** 条商品数据\n\n"
-        f"**各平台明细**\n{stat_lines}"
+        f"**鹅产品市场调研日报 · {today}**\n\n"
+        f"今日共采集 **{total}** 条市场信息\n\n"
+        f"**各品类明细**\n{stat_lines}"
         f"{alert_section}\n\n"
-        f"数据已同步至飞书多维表格 ↗"
+        f"数据已同步至飞书多维表格"
     )
 
     _send_webhook(content)
@@ -64,7 +62,7 @@ def send_error_alert(error_msg: str):
     if not FEISHU_WEBHOOK_URL:
         return
     today = str(date.today())
-    _send_webhook(f"**鹅产品监控 · {today} 运行异常**\n\n{error_msg}")
+    _send_webhook(f"**鹅产品市场调研 · {today} 运行异常**\n\n{error_msg}")
 
 
 def _send_webhook(text: str):
@@ -81,7 +79,7 @@ def _send_webhook(text: str):
             }],
             "header": {
                 "title": {
-                    "content": "鹅产品多平台监控",
+                    "content": "鹅产品市场调研",
                     "tag": "plain_text",
                 },
                 "template": "blue",

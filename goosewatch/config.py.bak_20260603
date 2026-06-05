@@ -1,0 +1,53 @@
+"""
+goosewatch / config.py
+全局配置：飞书凭证、鹅产品调研关键词、飞书多维表格信息
+"""
+import os
+
+# ── 飞书 App 凭证 ──────────────────────────────────────────────
+FEISHU_APP_ID = os.environ.get("FEISHU_APP_ID", "")
+FEISHU_APP_SECRET = os.environ.get("FEISHU_APP_SECRET", "")
+
+# ── 飞书 Webhook（群通知） ─────────────────────────────────────
+FEISHU_WEBHOOK_URL = os.environ.get("FEISHU_WEBHOOK_URL", "")
+
+# ── 飞书多维表格（Bitable） ───────────────────────────────────
+BITABLE_APP_TOKEN = os.environ.get("BITABLE_APP_TOKEN", "")  # 多维表格的 app_token
+BITABLE_TABLE_ID  = os.environ.get("BITABLE_TABLE_ID", "")   # 表格 table_id
+
+# ── 鹅产品调研配置 ─────────────────────────────────────────────
+# 鹅各部位产品关键词（用于互联网信息搜索）
+GOOSE_PRODUCTS = [
+    {"name": "鹅肥肝",       "keywords": "鹅肝 批发价格 市场需求 利润",          "category": "内脏"},
+    {"name": "刀翎鹅毛",     "keywords": "刀翎鹅毛 羽毛球 收购价格 一斤",        "category": "羽毛"},
+    {"name": "鹅绒",         "keywords": "鹅绒 90%白鹅绒 价格 市场行情",         "category": "羽毛"},
+    {"name": "鹅掌",         "keywords": "鹅掌 批发价 火锅 卤味 市场行情",       "category": "部位肉"},
+    {"name": "鹅翅",         "keywords": "鹅翅 批发价 烧烤 卤味 市场行情",       "category": "部位肉"},
+    {"name": "鹅肠",         "keywords": "鹅肠 火锅 批发价 市场行情 需求",       "category": "内脏"},
+    {"name": "鹅胗",         "keywords": "鹅胗 鹅肾 批发价 卤味 市场行情",       "category": "内脏"},
+    {"name": "鹅肉",         "keywords": "鹅肉 白条鹅 批发价 市场行情 深加工",   "category": "主体"},
+    {"name": "鹅血",         "keywords": "鹅血 食用 药用 深加工 价格 前景",      "category": "内脏"},
+    {"name": "鹅头",         "keywords": "鹅头 批发价 卤味 市场行情",            "category": "部位肉"},
+    {"name": "鹅脖",         "keywords": "鹅脖 批发价 卤味 市场行情",            "category": "部位肉"},
+    {"name": "鹅油",         "keywords": "鹅油 精油 深加工 利润 市场前景",       "category": "副产品"},
+    {"name": "鹅胆",         "keywords": "鹅胆 药用 深加工 价格 市场前景",       "category": "副产品"},
+]
+
+# 信息源配置
+DATA_SOURCES = [
+    {"name": "一亩田",    "url": "https://www.ymt.com",        "type": "农产品批发"},
+    {"name": "1688",      "url": "https://www.1688.com",       "type": "批发平台"},
+    {"name": "百度爱采购", "url": "https://b2b.baidu.com",     "type": "B2B平台"},
+    {"name": "惠农网",    "url": "https://www.cnhnb.com",      "type": "农产品批发"},
+]
+
+MAX_RESULTS_PER_PRODUCT = 5       # 每个产品最多记录条数
+PRICE_CHANGE_THRESHOLD = 0.10     # 价格变化超过 10% 则告警
+
+# ── 反爬 / 请求配置 ───────────────────────────────────────────
+REQUEST_DELAY = 2          # 请求间隔（秒），别改太小
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)

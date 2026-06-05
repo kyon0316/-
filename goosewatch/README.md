@@ -1,95 +1,67 @@
-# goosewatch —— 鹅产品多平台监控
+# Goosewatch — 鹅产品市场调研系统
 
-每天自动搜索淘宝、京东、拼多多、抖音上的鹅相关产品，汇总写入飞书多维表格，并推送价格异动通知。
+每日自动聚合鹅各部位产品的市场行情数据，写入飞书多维表格。
 
----
-
-## 目录结构
+## 技术架构
 
 ```
-goosewatch/
-├── __init__.py
-├── config.py          # 全局配置（关键词、飞书凭证、反爬参数）
-├── main.py            # 主入口
-├── processor.py       # 数据清洗 / 去重 / 价格异动检测
-├── writer.py          # 飞书多维表格写入
-├── notifier.py        # 飞书群 Webhook 通知
-├── requirements.txt
-└── fetchers/
-    ├── __init__.py
-    ├── jd.py          # 京东（requests + BeautifulSoup）
-    ├── taobao.py      # 淘宝（requests + h5api / HTML fallback）
-    ├── pdd.py         # 拼多多（playwright 无头浏览器）
-    └── douyin.py      # 抖音电商（playwright 无头浏览器）
+互联网信息源（一亩田/1688/B2B平台）
+         ↓
+   aggregator.py（行情聚合 + baseline fallback）
+         ↓
+   processor.py（数据清洗 / 去重 / 异动检测）
+         ↓
+   writer.py（写入飞书 Bitable）
+         ↓
+   notifier.py（飞书群通知）
 ```
 
----
+## 数据来源
+
+- **在线源**：一亩田 (ymt.com)、1688 (1688.com)、百度爱采购 (b2b.baidu.com)
+- **基线数据**：内置 2026 年 6 月调研的 13 个鹅产品行情基线，在线源不可用时自动 fallback
+
+## 鹅产品覆盖
+
+| 类别 | 产品 |
+|------|------|
+| 羽毛 | 鹅绒、刀翎鹅毛 |
+| 内脏 | 鹅肥肝、鹅肠、鹅胗、鹅血 |
+| 部位肉 | 鹅掌、鹅翅、鹅头、鹅脖 |
+| 主体 | 鹅肉 |
+| 副产品 | 鹅油、鹅胆 |
 
 ## 飞书多维表格字段
 
-在飞书多维表格中**提前创建**以下字段（字段名需和代码一致）：
+需要在飞书 Bitable 中创建以下字段：
 
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
-| 平台 | 单行文本 | 淘宝 / 京东 / 拼多多 / 抖音 |
-| 搜索词 | 单行文本 | 触发该条数据的关键词 |
-| 商品名称 | 单行文本 | 商品标题 |
-| 价格 | 数字 | 当前到手价（元） |
-| 原价 | 数字 | 划线价 |
-| 月销量 | 数字 | 近30天销量 |
-| 店铺名称 | 单行文本 | 卖家店铺 |
-| 评分 | 数字 | 综合评分（0-5） |
-| 商品链接 | 超链接 | 原始商品 URL |
-| 商品ID | 单行文本 | 平台 SKU ID |
-| 采集日期 | 单行文本 | YYYY-MM-DD |
-| 价格变化(%) | 数字 | 与昨日对比，正数=涨价 |
+| 产品名称 | 文本 | 鹅各部位名称 |
+| 产品类别 | 单选 | 羽毛/内脏/部位肉/主体/副产品 |
+| 参考价格 | 文本 | 批发价格区间 |
+| 市场需求 | 单选 | 极高/高/中 |
+| 数据来源 | 文本 | 一亩田/1688/行情基线 |
+| 备注 | 文本 | 补充说明 |
+| 采集日期 | 日期 | YYYY-MM-DD |
 
----
+## 调度
 
-## GitHub Secrets 配置
+GitHub Actions，每日 08:00 CST（00:00 UTC）触发，15 分钟内完成。
 
-在仓库 Settings → Secrets and variables → Actions 中添加：
+## 环境变量（GitHub Secrets）
 
-| Secret 名称 | 说明 |
-|-------------|------|
+| Secret | 说明 |
+|--------|------|
 | FEISHU_APP_ID | 飞书应用 App ID |
 | FEISHU_APP_SECRET | 飞书应用 App Secret |
-| FEISHU_WEBHOOK_URL | 飞书群机器人 Webhook URL |
-| BITABLE_APP_TOKEN | 多维表格的 app_token（URL 中的参数） |
-| BITABLE_TABLE_ID | 表格的 table_id |
-| TAOBAO_COOKIE | 淘宝登录 Cookie（浏览器 DevTools → Network 复制） |
-| DOUYIN_COOKIE | 抖音登录 Cookie（同上） |
-
----
+| FEISHU_WEBHOOK_URL | 飞书群 Webhook 地址 |
+| BITABLE_APP_TOKEN | 飞书多维表格 app_token |
+| BITABLE_TABLE_ID | 飞书多维表格 table_id |
 
 ## 本地运行
 
 ```bash
-pip install -r goosewatch/requirements.txt
-playwright install chromium
-
-# 设置环境变量后运行
-export FEISHU_APP_ID=xxx
-export FEISHU_APP_SECRET=xxx
-# ...
+pip install -r requirements.txt
 python -m goosewatch.main
 ```
-
----
-
-## 搜索词配置
-
-编辑 `goosewatch/config.py` 中的 `KEYWORDS` 列表即可：
-
-```python
-KEYWORDS = ["鹅绒被", "鹅肝", "鹅掌", "鹅肉", "鹅玩具", "鹅周边"]
-```
-
----
-
-## 注意事项
-
-1. **Cookie 维护**：淘宝和抖音 Cookie 有效期约 7-30 天，失效后需手动更新 Secret
-2. **反爬限制**：`REQUEST_DELAY` 默认 2 秒，不建议改小
-3. **playwright 在 GitHub Actions**：已在 workflow 中配置安装 Chromium，首次运行较慢（约3分钟）
-4. **抖音爬取**：反爬最强，如果持续失败可以先关闭，只用三个平台

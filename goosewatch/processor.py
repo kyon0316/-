@@ -1,12 +1,11 @@
 """
 processor.py
-数据清洗 / 去重 / 价格异动检测。
-- 清洗：统一字段格式，去掉空 title
-- 去重：同平台 + keyword + sku_id + 日期只保留一条
-- 异动：与昨日数据对比，标记 price_change_pct
+数据清洗 / 去重 / 异动检测。
+- 清洗：统一字段格式
+- 去重：同产品名称 + 采集日期只保留一条
+- 异动：与昨日数据对比
 """
 import logging
-from datetime import date, timedelta
 from goosewatch.config import PRICE_CHANGE_THRESHOLD
 
 logger = logging.getLogger(__name__)
@@ -14,65 +13,55 @@ logger = logging.getLogger(__name__)
 
 def process(raw_items: list[dict], yesterday_items: list[dict] = None) -> tuple[list[dict], list[dict]]:
     """
-    处理当天抓取的原始数据。
+    处理当天聚合的原始数据。
 
     Args:
-        raw_items: 今天所有平台抓取的原始列表
-        yesterday_items: 昨天飞书表格中已存储的数据（用于价格对比）
+        raw_items: 今天聚合的原始列表
+        yesterday_items: 昨天飞书表格中已存储的数据（用于对比）
 
     Returns:
-        (cleaned, alerts): 清洗后的列表，以及需要告警的价格异动列表
+        (cleaned, alerts): 清洗后的列表，以及需要告警的异动列表
     """
     yesterday_items = yesterday_items or []
 
-    # 1. 清洗：过滤空 title，价格修正
+    # 1. 清洗：过滤空产品名称
     cleaned = []
     for item in raw_items:
-        title = (item.get("title") or "").strip()
-        if not title:
+        name = (item.get("产品名称") or "").strip()
+        if not name:
             continue
-        try:
-            price = float(item.get("price") or 0)
-        except (ValueError, TypeError):
-            price = 0.0
-        item["title"] = title
-        item["price"] = round(price, 2)
-        item["original_price"] = round(float(item.get("original_price") or price), 2)
-        item["sales"] = int(item.get("sales") or 0)
+        item["产品名称"] = name
         cleaned.append(item)
 
-    # 2. 去重：同平台 + keyword + sku_id 每天只保留第一条
+    # 2. 去重：同产品名称 + 采集日期每天只保留第一条
     seen = set()
     deduped = []
     for item in cleaned:
-        key = (item["platform"], item["keyword"], item.get("sku_id", ""), item["collect_date"])
+        key = (item.get("产品名称", ""), item.get("采集日期", ""))
         if key not in seen:
             seen.add(key)
             deduped.append(item)
 
     logger.info(f"[Processor] 原始 {len(raw_items)} 条 → 清洗后 {len(cleaned)} → 去重后 {len(deduped)}")
 
-    # 3. 价格异动：与昨日数据对比
+    # 3. 异动检测（简化版：对比是否有新数据源或价格变化）
     yesterday_map = {}
     for yi in yesterday_items:
-        k = (yi.get("platform"), yi.get("keyword"), yi.get("sku_id", ""))
-        yesterday_map[k] = float(yi.get("price") or 0)
+        k = yi.get("产品名称", "")
+        yesterday_map[k] = yi.get("参考价格", "")
 
     alerts = []
     for item in deduped:
-        key = (item["platform"], item["keyword"], item.get("sku_id", ""))
-        yesterday_price = yesterday_map.get(key)
-        if yesterday_price and yesterday_price > 0:
-            change = (item["price"] - yesterday_price) / yesterday_price
-            item["price_change_pct"] = round(change * 100, 2)
-            if abs(change) >= PRICE_CHANGE_THRESHOLD:
-                alerts.append({
-                    **item,
-                    "yesterday_price": yesterday_price,
-                    "change_pct": round(change * 100, 2),
-                })
-        else:
-            item["price_change_pct"] = None
+        name = item.get("产品名称", "")
+        today_price = item.get("参考价格", "")
+        yesterday_price = yesterday_map.get(name)
 
-    logger.info(f"[Processor] 发现价格异动 {len(alerts)} 条")
+        if yesterday_price and today_price and yesterday_price != today_price:
+            alerts.append({
+                **item,
+                "昨日价格": yesterday_price,
+                "今日价格": today_price,
+            })
+
+    logger.info(f"[Processor] 发现数据异动 {len(alerts)} 条")
     return deduped, alerts
