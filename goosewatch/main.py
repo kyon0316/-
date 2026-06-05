@@ -67,7 +67,7 @@ def run():
         cleaned, alerts = process(raw, yesterday_records)
 
         # ── 4. 写入飞书多维表格 ────────────────────────────────
-        logger.info("--- 写入飞书多维表格 ---")
+        logger.info(f"--- 写入飞书多维表格 ({len(cleaned)} 条待写入) ---")
         total_written = write_to_bitable(cleaned)
 
         # ── 5. 统计各品类数量 ──────────────────────────────────

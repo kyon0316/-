@@ -95,7 +95,10 @@ def write_to_bitable(items: list[dict]) -> int:
             total_written += written
             logger.info(f"[Writer] 批次 {i//batch_size + 1}: 写入 {written} 条")
         else:
-            logger.warning(f"[Writer] 批次写入部分失败: {result}")
+            logger.error(f"[Writer] 飞书API错误 code={result.get('code')} msg={result.get('msg')}")
+            logger.error(f"[Writer] 完整响应: {result}")
+            if records:
+                logger.info(f"[Writer] 示例record keys: {list(records[0]['fields'].keys())}")
 
     logger.info(f"[Writer] 共写入 {total_written} 条")
     return total_written
