@@ -1,0 +1,25 @@
+name: Keep Alive
+
+on:
+  schedule:
+    # 每周日 12:00 UTC+8 = UTC 04:00
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update heartbeat timestamp
+        run: |
+          date -u > .github/heartbeat.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/heartbeat.txt || true
+          git commit -m "chore: weekly keep-alive $(date -u '+%Y-%m-%d')" --allow-empty
+          git push || true

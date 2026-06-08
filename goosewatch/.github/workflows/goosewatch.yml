@@ -1,0 +1,36 @@
+name: Goosewatch Daily
+
+on:
+  schedule:
+    # 每个工作日 10:00 UTC+8（即 02:00 UTC，周一至周五）触发
+    - cron: "0 2 * * 1-5"
+  workflow_dispatch:   # 支持手动触发，调试用
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r goosewatch/requirements.txt
+
+      - name: Run goosewatch
+        env:
+          FEISHU_APP_ID:      ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET:  ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          BITABLE_APP_TOKEN:  ${{ secrets.BITABLE_APP_TOKEN }}
+          BITABLE_TABLE_ID:   ${{ secrets.BITABLE_TABLE_ID }}
+        run: python -m goosewatch.main
